@@ -10,7 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Landon Bell", email = "landon.bell@valorence.com" }]
-dependencies = ["asyncio", "typing-extensions>=4.0.0"]
+dependencies = [
+    "typing-extensions>=4.0.0",
+    "pyyaml>=6.0.2",
+]
 
 [project.optional-dependencies]
 hardware = ["smbus2"]
@@ -21,9 +24,6 @@ dev = [
     "black>=23.0",
     "ruff>=0.1.0",
     "mypy>=1.0",
-]
-simulation = [
-    "pyyaml>=6.0", # For config files
 ]
 
 [project.urls]
