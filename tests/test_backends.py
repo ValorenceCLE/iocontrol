@@ -1,12 +1,18 @@
-"""Tests for IoControl backends"""
+"""Tests for IoControl hardware backends"""
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock
+import time
 
-from iocontrol.backends import HardwareBackend, SimulatedBackend, MCPBackend
+from iocontrol.backends import (
+    HardwareBackend,
+    MCPBackend,
+    MCP23017Config,
+    MCP23017Chip,
+    SimulatedBackend
+)
 from iocontrol.types import IoPoint, IoType
-
 
 class TestSimulatedBackend:
     """Test cases for SimulatedBackend"""
@@ -16,348 +22,422 @@ class TestSimulatedBackend:
         """Sample I/O points for testing"""
         return [
             IoPoint(
-                name="output_1",
-                io_type=IoType.DIGITAL_OUTPUT,
-                hardware_ref="sim.pin0",
-                critical=False,
-                description="Test output"
+                name="digital_in",
+                io_type=IoType.DIGITAL_INPUT,
+                hardware_ref="sim_0",
+                description="Digital input"
             ),
             IoPoint(
-                name="input_1", 
-                io_type=IoType.DIGITAL_INPUT,
-                hardware_ref="sim.pin1",
-                critical=True,
-                description="Test input"
+                name="digital_out",
+                io_type=IoType.DIGITAL_OUTPUT,
+                hardware_ref="sim_1",
+                description="Digital output",
+                initial_state=False
+            ),
+            IoPoint(
+                name="analog_in",
+                io_type=IoType.ANALOG_INPUT,
+                hardware_ref="sim_2",
+                description="Analog input"
             ),
             IoPoint(
                 name="analog_out",
                 io_type=IoType.ANALOG_OUTPUT,
-                hardware_ref="sim.pin2",
-                initial_state=0.0,
-                description="Test analog output"
+                hardware_ref="sim_3",
+                description="Analog output",
+                initial_state=0.0
             )
         ]
     
+    @pytest.mark.asyncio
     async def test_initialization(self, sample_points):
         """Test backend initialization"""
-        backend = SimulatedBackend("test_sim")
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        success = await backend.initialize(sample_points)
-        assert success
-        assert backend._initialized
-        
-        # Check points were stored
-        assert len(backend._points) == 3
-        assert "output_1" in backend._points
-        assert "input_1" in backend._points
-        assert "analog_out" in backend._points
-        
-        # Check initial states
-        assert backend._state["output_1"] is False  # Default
-        assert backend._state["input_1"] is False  # Default
-        assert backend._state["analog_out"] == 0.0  # From initial_state
+        assert backend.is_initialized()
+        assert backend.get_read_count() == 0
+        assert backend.get_write_count() == 0
+        assert backend.get_error_count() == 0
     
+    @pytest.mark.asyncio
     async def test_read_all(self, sample_points):
-        """Test reading all I/O points"""
-        backend = SimulatedBackend("test_sim")
-        await backend.initialize(sample_points)
+        """Test reading all points"""
+        backend = SimulatedBackend()
+        await backend.initialize()
+        
+        # Set some initial states
+        states = {
+            "digital_in": True,
+            "digital_out": False,
+            "analog_in": 3.14,
+            "analog_out": 0.0
+        }
+        backend.set_simulated_states(states)
         
         # Read all points
-        state = await backend.read_all()
+        result = await backend.read_all_points()
         
-        assert isinstance(state, dict)
-        assert len(state) == 3
-        assert "output_1" in state
-        assert "input_1" in state
-        assert "analog_out" in state
-        
-        # Check metrics updated
-        assert backend.metrics.read_count > 0
-        assert backend.metrics.avg_read_time_ms > 0
+        assert result == states
+        assert backend.get_read_count() == 1
+        assert backend.get_error_count() == 0
     
+    @pytest.mark.asyncio
     async def test_write_point_digital(self, sample_points):
-        """Test writing to digital output"""
-        backend = SimulatedBackend("test_sim")
-        await backend.initialize(sample_points)
+        """Test writing to digital points"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
         # Write to digital output
-        success = await backend.write_point("output_1", True)
-        assert success
+        await backend.write_point("digital_out", True)
         
-        # Verify state changed
-        state = await backend.read_all()
-        assert state["output_1"] is True
-        
-        # Check metrics
-        assert backend.metrics.write_count > 0
-        assert backend.metrics.avg_write_time_ms > 0
+        # Verify state
+        states = backend.get_simulated_states()
+        assert states["digital_out"] is True
+        assert backend.get_write_count() == 1
     
+    @pytest.mark.asyncio
     async def test_write_point_analog(self, sample_points):
-        """Test writing to analog output"""
-        backend = SimulatedBackend("test_sim")
-        await backend.initialize(sample_points)
+        """Test writing to analog points"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
         # Write to analog output
-        success = await backend.write_point("analog_out", 3.14)
-        assert success
+        await backend.write_point("analog_out", 3.14)
         
-        # Verify state changed
-        state = await backend.read_all()
-        assert state["analog_out"] == 3.14
+        # Verify state
+        states = backend.get_simulated_states()
+        assert states["analog_out"] == 3.14
+        assert backend.get_write_count() == 1
     
+    @pytest.mark.asyncio
     async def test_write_to_input_fails(self, sample_points):
-        """Test that writing to input points fails"""
-        backend = SimulatedBackend("test_sim")
-        await backend.initialize(sample_points)
+        """Test writing to input points fails"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        # Try to write to input (should fail)
-        success = await backend.write_point("input_1", True)
-        assert not success
+        # Try to write to input
+        with pytest.raises(ValueError):
+            await backend.write_point("digital_in", True)
         
-        # Verify state unchanged
-        state = await backend.read_all()
-        assert state["input_1"] is False  # Still default value
+        assert backend.get_error_count() == 1
     
+    @pytest.mark.asyncio
     async def test_write_unknown_point(self, sample_points):
-        """Test writing to unknown point"""
-        backend = SimulatedBackend("test_sim")
-        await backend.initialize(sample_points)
+        """Test writing to unknown point fails"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        success = await backend.write_point("unknown_point", True)
-        assert not success
+        with pytest.raises(ValueError):
+            await backend.write_point("unknown_point", True)
+        
+        assert backend.get_error_count() == 1
     
+    @pytest.mark.asyncio
     async def test_simulate_input_change(self, sample_points):
         """Test simulating input changes"""
-        backend = SimulatedBackend("test_sim")
-        await backend.initialize(sample_points)
+        backend = SimulatedBackend()
+        await backend.initialize()
         
         # Simulate input change
-        backend.simulate_input_change("input_1", True)
+        backend.set_simulated_states({"digital_in": True})
         
-        # Verify change
-        state = await backend.read_all()
-        assert state["input_1"] is True
-        
-        # Simulate another change
-        backend.simulate_input_change("input_1", False)
-        state = await backend.read_all()
-        assert state["input_1"] is False
+        # Read the point
+        value = await backend.read_point("digital_in")
+        assert value is True
     
+    @pytest.mark.asyncio
     async def test_close(self, sample_points):
-        """Test backend cleanup"""
-        backend = SimulatedBackend("test_sim")
-        await backend.initialize(sample_points)
-        
-        assert backend._initialized
-        assert len(backend._state) > 0
-        assert len(backend._points) > 0
+        """Test closing the backend"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
         await backend.close()
-        
-        assert not backend._initialized
-        assert len(backend._state) == 0
-        assert len(backend._points) == 0
+        assert not backend.is_initialized()
     
+    @pytest.mark.asyncio
     async def test_performance_metrics(self, sample_points):
         """Test performance metrics tracking"""
-        backend = SimulatedBackend("test_sim")
-        await backend.initialize(sample_points)
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        # Perform multiple operations
-        for i in range(10):
-            await backend.write_point("output_1", i % 2 == 0)
-            await backend.read_all()
+        # Perform some operations
+        await backend.read_point("digital_in")
+        await backend.write_point("digital_out", True)
         
-        # Check metrics
-        assert backend.metrics.read_count == 10
-        assert backend.metrics.write_count == 10
-        assert backend.metrics.avg_read_time_ms > 0
-        assert backend.metrics.avg_write_time_ms > 0
+        assert backend.get_read_count() == 1
+        assert backend.get_write_count() == 1
+        assert backend.get_error_count() == 0
     
+    @pytest.mark.asyncio
     async def test_simulated_delays(self):
-        """Test that simulated delays work"""
-        backend = SimulatedBackend("test_sim")
-        backend._read_delay = 0.01   # 10ms delay
-        backend._write_delay = 0.01  # 10ms delay
+        """Test simulated operation delays"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        points = [
-            IoPoint("test", IoType.DIGITAL_OUTPUT, "sim.pin0")
-        ]
-        await backend.initialize(points)
+        # Set delays
+        backend.set_simulated_delay(0.1)  # 100ms delay
         
-        # Measure read time
-        start_time = asyncio.get_event_loop().time()
-        await backend.read_all()
-        read_time = asyncio.get_event_loop().time() - start_time
+        # Measure operation time
+        start_time = time.time()
+        await backend.read_point("digital_in")
+        duration = time.time() - start_time
         
-        # Should include simulated delay
-        assert read_time >= 0.009  # Allow some tolerance
+        assert duration >= 0.1  # Should take at least 100ms
+    
+    @pytest.mark.asyncio
+    async def test_error_rate(self):
+        """Test simulated error rate"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        # Measure write time
-        start_time = asyncio.get_event_loop().time()
-        await backend.write_point("test", True)
-        write_time = asyncio.get_event_loop().time() - start_time
+        # Set 100% error rate
+        backend.set_error_rate(1.0)
         
-        # Should include simulated delay
-        assert write_time >= 0.009  # Allow some tolerance
-
+        # Operations should fail
+        with pytest.raises(RuntimeError):
+            await backend.read_point("digital_in")
+        
+        assert backend.get_error_count() == 1
 
 class TestMCPBackend:
-    """Test cases for MCPBackend (placeholder)"""
+    """Test cases for MCP23017 backend"""
     
-    async def test_mcp_backend_placeholder(self):
-        """Test that MCP backend is properly stubbed"""
-        backend = MCPBackend("test_mcp", [])
+    @pytest.fixture
+    def mock_i2c_device(self):
+        """Create a mock I2C device"""
+        device = AsyncMock()
+        device.read_byte.return_value = 0
+        device.read_bytes.return_value = [0, 0]
+        return device
+    
+    @pytest.fixture
+    def chip_config(self):
+        """Create a chip configuration"""
+        return MCP23017Config(
+            address=0x20,
+            bus_number=1,
+            pull_ups=True,
+            sequential_operation=True
+        )
+    
+    @pytest.mark.asyncio
+    async def test_chip_initialization(self, chip_config, mock_i2c_device):
+        """Test MCP23017 chip initialization"""
+        chip = MCP23017Chip(chip_config)
+        chip.device = mock_i2c_device
         
-        # Should fail initialization (not implemented)
-        success = await backend.initialize([])
-        assert not success
+        await chip.initialize()
         
-        # Should return empty results
-        state = await backend.read_all()
-        assert state == {}
+        # Verify initialization sequence
+        mock_i2c_device.write_byte.assert_any_call(0x00, 0xFF)  # IODIRA
+        mock_i2c_device.write_byte.assert_any_call(0x01, 0xFF)  # IODIRB
+        mock_i2c_device.write_byte.assert_any_call(0x0C, 0xFF)  # GPPUA
+        mock_i2c_device.write_byte.assert_any_call(0x0D, 0xFF)  # GPPUB
+        mock_i2c_device.write_byte.assert_any_call(0x0A, 0x20)  # IOCONA
+        mock_i2c_device.write_byte.assert_any_call(0x0B, 0x20)  # IOCONB
+    
+    @pytest.mark.asyncio
+    async def test_chip_pin_configuration(self, chip_config, mock_i2c_device):
+        """Test pin configuration"""
+        chip = MCP23017Chip(chip_config)
+        chip.device = mock_i2c_device
+        await chip.initialize()
         
-        success = await backend.write_point("test", True)
-        assert not success
+        # Configure pin as output
+        await chip.configure_pin(0, 'output', pull_up=False)
+        mock_i2c_device.write_byte.assert_any_call(0x00, 0xFE)  # IODIRA
         
-        # Should not raise errors
-        await backend.close()
-
+        # Configure pin as input with pull-up
+        await chip.configure_pin(8, 'input', pull_up=True)
+        mock_i2c_device.write_byte.assert_any_call(0x01, 0xFF)  # IODIRB
+        mock_i2c_device.write_byte.assert_any_call(0x0D, 0xFF)  # GPPUB
+    
+    @pytest.mark.asyncio
+    async def test_chip_read_write(self, chip_config, mock_i2c_device):
+        """Test reading and writing pins"""
+        chip = MCP23017Chip(chip_config)
+        chip.device = mock_i2c_device
+        await chip.initialize()
+        
+        # Configure pin as output
+        await chip.configure_pin(0, 'output')
+        
+        # Write to pin
+        await chip.write_pin(0, True)
+        mock_i2c_device.write_byte.assert_any_call(0x12, 0x01)  # GPIOA
+        
+        # Read pin
+        mock_i2c_device.read_byte.return_value = 0x01
+        value = await chip.read_pin(0)
+        assert value is True
+    
+    @pytest.mark.asyncio
+    async def test_backend_initialization(self, chip_config):
+        """Test MCPBackend initialization"""
+        backend = MCPBackend([chip_config])
+        await backend.initialize()
+        
+        assert backend.is_initialized()
+        assert len(backend._chips) == 1
+    
+    @pytest.mark.asyncio
+    async def test_backend_read_write(self, chip_config, mock_i2c_device):
+        """Test backend read/write operations"""
+        backend = MCPBackend([chip_config])
+        chip = MCP23017Chip(chip_config)
+        chip.device = mock_i2c_device
+        backend._chips[chip_config.address] = chip
+        await backend.initialize()
+        
+        # Write to point
+        await backend.write_point("mcp20_0", True)
+        mock_i2c_device.write_byte.assert_any_call(0x12, 0x01)  # GPIOA
+        
+        # Read point
+        mock_i2c_device.read_byte.return_value = 0x01
+        value = await backend.read_point("mcp20_0")
+        assert value is True
+    
+    @pytest.mark.asyncio
+    async def test_backend_batch_operations(self, chip_config, mock_i2c_device):
+        """Test batch read/write operations"""
+        backend = MCPBackend([chip_config])
+        chip = MCP23017Chip(chip_config)
+        chip.device = mock_i2c_device
+        backend._chips[chip_config.address] = chip
+        await backend.initialize()
+        
+        # Batch write
+        await backend.write_points({
+            "mcp20_0": True,
+            "mcp20_1": True
+        })
+        mock_i2c_device.write_byte.assert_any_call(0x12, 0x03)  # GPIOA
+        
+        # Batch read
+        mock_i2c_device.read_bytes.return_value = [0x03, 0x00]
+        states = await backend.read_all_points()
+        assert states["mcp20_0"] is True
+        assert states["mcp20_1"] is True
 
 class TestHardwareBackendInterface:
-    """Test the abstract HardwareBackend interface"""
+    """Test cases for HardwareBackend interface"""
     
     def test_abstract_methods(self):
-        """Test that HardwareBackend cannot be instantiated"""
+        """Test that HardwareBackend is abstract"""
         with pytest.raises(TypeError):
-            HardwareBackend("test")
+            HardwareBackend()
     
+    @pytest.mark.asyncio
     async def test_backend_metrics(self):
-        """Test that all backends have metrics"""
-        backend = SimulatedBackend("test")
+        """Test backend metrics functionality"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        assert hasattr(backend, 'metrics')
-        assert hasattr(backend.metrics, 'read_count')
-        assert hasattr(backend.metrics, 'write_count')
-        assert hasattr(backend.metrics, 'avg_read_time_ms')
-        assert hasattr(backend.metrics, 'avg_write_time_ms')
-        assert hasattr(backend.metrics, 'error_count')
-
+        # Add critical point
+        backend.add_critical_point("test_point")
+        assert backend.is_critical_point("test_point")
+        
+        # Remove critical point
+        backend.remove_critical_point("test_point")
+        assert not backend.is_critical_point("test_point")
+        
+        # Test state cache
+        await backend.update_state_cache({"test_point": True})
+        cached_state = await backend.get_cached_state("test_point")
+        assert cached_state is True
+        
+        # Clear cache
+        await backend.clear_state_cache()
+        cached_state = await backend.get_cached_state("test_point")
+        assert cached_state is None
 
 class TestConcurrentOperations:
     """Test concurrent operations on backends"""
     
+    @pytest.mark.asyncio
     async def test_concurrent_reads(self):
         """Test concurrent read operations"""
-        backend = SimulatedBackend("test")
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        points = [
-            IoPoint(f"point_{i}", IoType.DIGITAL_INPUT, f"sim.pin{i}")
-            for i in range(10)
-        ]
-        await backend.initialize(points)
+        # Set initial state
+        backend.set_simulated_states({"test_point": True})
         
         # Perform concurrent reads
-        tasks = [backend.read_all() for _ in range(10)]
-        results = await asyncio.gather(*tasks)
+        async def read_point():
+            return await backend.read_point("test_point")
         
-        # All reads should succeed and return same data
-        assert len(results) == 10
-        for result in results:
-            assert len(result) == 10
-            assert all(f"point_{i}" in result for i in range(10))
+        results = await asyncio.gather(*[read_point() for _ in range(10)])
+        assert all(result is True for result in results)
     
+    @pytest.mark.asyncio
     async def test_concurrent_writes(self):
         """Test concurrent write operations"""
-        backend = SimulatedBackend("test")
-        
-        points = [
-            IoPoint(f"output_{i}", IoType.DIGITAL_OUTPUT, f"sim.pin{i}")
-            for i in range(10)
-        ]
-        await backend.initialize(points)
+        backend = SimulatedBackend()
+        await backend.initialize()
         
         # Perform concurrent writes
-        tasks = [
-            backend.write_point(f"output_{i}", i % 2 == 0)
-            for i in range(10)
-        ]
-        results = await asyncio.gather(*tasks)
+        async def write_point(value):
+            await backend.write_point("test_point", value)
         
-        # All writes should succeed
-        assert all(results)
+        await asyncio.gather(*[write_point(True) for _ in range(10)])
         
-        # Verify final states
-        state = await backend.read_all()
-        for i in range(10):
-            expected = i % 2 == 0
-            assert state[f"output_{i}"] == expected
+        # Verify final state
+        value = await backend.read_point("test_point")
+        assert value is True
     
+    @pytest.mark.asyncio
     async def test_mixed_concurrent_operations(self):
-        """Test mixing reads and writes concurrently"""
-        backend = SimulatedBackend("test")
+        """Test mixed concurrent read/write operations"""
+        backend = SimulatedBackend()
+        await backend.initialize()
         
-        points = [
-            IoPoint("output", IoType.DIGITAL_OUTPUT, "sim.pin0"),
-            IoPoint("input", IoType.DIGITAL_INPUT, "sim.pin1")
-        ]
-        await backend.initialize(points)
+        # Set initial state
+        backend.set_simulated_states({"test_point": False})
         
-        # Mix of read and write operations
-        tasks = []
-        for i in range(20):
-            if i % 2 == 0:
-                tasks.append(backend.write_point("output", i % 4 == 0))
-            else:
-                tasks.append(backend.read_all())
+        # Perform mixed operations
+        async def read_point():
+            return await backend.read_point("test_point")
         
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        async def write_point(value):
+            await backend.write_point("test_point", value)
         
-        # Check no exceptions occurred
-        for result in results:
-            assert not isinstance(result, Exception)
+        # Start with reads
+        read_tasks = [read_point() for _ in range(5)]
+        # Add writes
+        write_tasks = [write_point(True) for _ in range(5)]
         
-        # Verify metrics updated correctly
-        assert backend.metrics.read_count == 10  # Half were reads
-        assert backend.metrics.write_count == 10  # Half were writes
-
+        # Run all operations concurrently
+        results = await asyncio.gather(*(read_tasks + write_tasks))
+        
+        # Verify final state
+        final_value = await backend.read_point("test_point")
+        assert final_value is True
 
 @pytest.mark.asyncio
 async def test_backend_integration():
-    """Integration test for backend usage patterns"""
-    backend = SimulatedBackend("integration_test")
+    """Test integration between different backend types"""
+    # Create backends
+    sim_backend = SimulatedBackend()
+    mcp_backend = MCPBackend([MCP23017Config(address=0x20)])
     
-    # Setup various point types
-    points = [
-        IoPoint("relay_1", IoType.DIGITAL_OUTPUT, "sim.pin0", critical=False),
-        IoPoint("relay_2", IoType.DIGITAL_OUTPUT, "sim.pin1", critical=True),
-        IoPoint("sensor_1", IoType.DIGITAL_INPUT, "sim.pin2", critical=True),
-        IoPoint("analog_sensor", IoType.ANALOG_INPUT, "sim.pin3", initial_state=2.5),
-        IoPoint("pwm_output", IoType.ANALOG_OUTPUT, "sim.pin4", initial_state=0.0)
-    ]
+    # Initialize backends
+    await sim_backend.initialize()
+    await mcp_backend.initialize()
     
-    success = await backend.initialize(points)
-    assert success
+    # Test operations on both backends
+    await sim_backend.write_point("sim_0", True)
+    await mcp_backend.write_point("mcp20_0", True)
     
-    try:
-        # Test various operations
-        await backend.write_point("relay_1", True)
-        await backend.write_point("relay_2", False)
-        await backend.write_point("pwm_output", 3.3)
-        
-        # Simulate sensor changes
-        backend.simulate_input_change("sensor_1", True)
-        backend.simulate_input_change("analog_sensor", 4.2)
-        
-        # Read final state
-        final_state = await backend.read_all()
-        
-        # Verify results
-        assert final_state["relay_1"] is True
-        assert final_state["relay_2"] is False
-        assert final_state["sensor_1"] is True
-        assert final_state["analog_sensor"] == 4.2
-        assert final_state["pwm_output"] == 3.3
-        
-    finally:
-        await backend.close()
+    # Read from both backends
+    sim_value = await sim_backend.read_point("sim_0")
+    mcp_value = await mcp_backend.read_point("mcp20_0")
+    
+    assert sim_value is True
+    assert mcp_value is True
+    
+    # Clean up
+    await sim_backend.close()
+    await mcp_backend.close()

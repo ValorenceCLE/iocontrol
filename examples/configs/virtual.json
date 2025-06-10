@@ -13,48 +13,6 @@
       "hardware_ref": "virtual.service.api",
       "critical": true,
       "description": "API service health check status"
-    },
-    {
-      "name": "backup_service_running",
-      "io_type": "digital_input",
-      "hardware_ref": "virtual.service.backup",
-      "critical": false,
-      "description": "Backup service running status"
-    },
-    {
-      "name": "cpu_usage_high",
-      "io_type": "digital_input",
-      "hardware_ref": "virtual.system.cpu_high",
-      "critical": true,
-      "description": "CPU usage above 80% threshold"
-    },
-    {
-      "name": "maintenance_mode",
-      "io_type": "digital_output",
-      "hardware_ref": "virtual.system.maintenance",
-      "initial_state": false,
-      "description": "System maintenance mode flag"
-    },
-    {
-      "name": "feature_new_ui",
-      "io_type": "digital_output",
-      "hardware_ref": "virtual.feature.new_ui", 
-      "initial_state": false,
-      "description": "Enable new user interface feature"
-    },
-    {
-      "name": "debug_logging",
-      "io_type": "digital_output",
-      "hardware_ref": "virtual.system.debug_logging",
-      "initial_state": false,
-      "description": "Enable debug logging"
-    },
-    {
-      "name": "load_balancer_weight",
-      "io_type": "analog_output",
-      "hardware_ref": "virtual.network.lb_weight",
-      "initial_state": 100.0,
-      "description": "Load balancer weight (0-100%)"
     }
   ]
 }

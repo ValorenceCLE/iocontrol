@@ -12,6 +12,7 @@ from datetime import datetime
 import copy
 
 from .types import IoPoint, IoType
+from .backends import MCPBackend, MCP23017Config, SimulatedBackend
 
 logger = logging.getLogger(__name__)
 

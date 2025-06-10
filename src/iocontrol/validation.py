@@ -1,8 +1,6 @@
-"""
-Simple configuration validation for IoControl
-Validates I/O configurations and enforces safety rules
-"""
+"""Configuration validation for IoControl"""
 
+from __future__ import annotations
 import re
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -10,12 +8,12 @@ from enum import Enum
 
 import jsonschema
 
+from .types import IoType
 
 class ValidationLevel(Enum):
     ERROR = "error"
     WARNING = "warning"
     INFO = "info"
-
 
 @dataclass
 class ValidationIssue:
@@ -25,7 +23,6 @@ class ValidationIssue:
     message: str
     path: str
     suggestion: Optional[str] = None
-
 
 class ConfigValidator:
     """Configuration validator for IoControl"""
@@ -248,7 +245,6 @@ class ConfigValidator:
         
         return issues
 
-
 def validate_io_config(config: Dict[str, Any]) -> Tuple[bool, List[ValidationIssue]]:
     """
     Validate I/O configuration
@@ -263,7 +259,6 @@ def validate_io_config(config: Dict[str, Any]) -> Tuple[bool, List[ValidationIss
     is_valid = not has_errors
     
     return is_valid, issues
-
 
 def print_validation_results(issues: List[ValidationIssue], show_info: bool = True):
     """Print validation results in readable format"""
@@ -306,7 +301,6 @@ def print_validation_results(issues: List[ValidationIssue], show_info: bool = Tr
         if warnings:
             print(f"   (Consider addressing {len(warnings)} warning(s))")
 
-
 def validate_config_file(file_path: str) -> bool:
     """Validate a configuration file"""
     try:
@@ -328,7 +322,6 @@ def validate_config_file(file_path: str) -> bool:
     except Exception as e:
         print(f"Failed to validate configuration: {e}")
         return False
-
 
 # Integration with IoManager
 def add_validation_to_manager(io_manager):

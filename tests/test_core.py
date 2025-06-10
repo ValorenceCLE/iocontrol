@@ -1,11 +1,15 @@
-"""Tests for IoControl core functionality - Fixed Version"""
+"""Tests for IoControl core functionality"""
 
 import pytest
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock
+from typing import Dict, Any, List
 
-from iocontrol import IoManager, SimulatedBackend, IoPoint, IoType
-
+from iocontrol.core.manager import IoManager, PollingConfig
+from iocontrol.core.metrics import PerformanceMonitor
+from iocontrol.types import IoPoint, IoType, StateChange
+from iocontrol.backends import SimulatedBackend
 
 class TestIoManager:
     """Test cases for IoManager"""
@@ -14,9 +18,9 @@ class TestIoManager:
     async def manager_with_backend(self):
         """Create IoManager with simulated backend"""
         manager = IoManager()
-        backend = SimulatedBackend("test")
+        backend = SimulatedBackend()
         await manager.add_backend("simulator", backend)
-        return manager, backend
+        return manager
     
     @pytest.fixture
     def sample_config(self):
@@ -24,116 +28,133 @@ class TestIoManager:
         return {
             "io_points": [
                 {
-                    "name": "test_output",
-                    "io_type": "digital_output",
-                    "hardware_ref": "sim.pin0",
-                    "critical": False,
-                    "description": "Test output"
+                    "name": "digital_in",
+                    "io_type": "digital_input",
+                    "hardware_ref": "sim_0",
+                    "critical": True,
+                    "description": "Digital input"
                 },
                 {
-                    "name": "test_input",
-                    "io_type": "digital_input", 
-                    "hardware_ref": "sim.pin1",
-                    "critical": True,
-                    "description": "Test input"
+                    "name": "digital_out",
+                    "io_type": "digital_output",
+                    "hardware_ref": "sim_1",
+                    "description": "Digital output"
+                },
+                {
+                    "name": "analog_in",
+                    "io_type": "analog_input",
+                    "hardware_ref": "sim_2",
+                    "description": "Analog input"
+                },
+                {
+                    "name": "analog_out",
+                    "io_type": "analog_output",
+                    "hardware_ref": "sim_3",
+                    "description": "Analog output"
                 }
             ]
         }
     
+    @pytest.mark.asyncio
     async def test_add_backend(self, manager_with_backend):
-        """Test adding backends"""
-        manager, backend = manager_with_backend
+        """Test adding a backend"""
+        manager = manager_with_backend
         assert "simulator" in manager.backends
-        assert manager.backends["simulator"] == backend
+        assert isinstance(manager.backends["simulator"], SimulatedBackend)
     
+    @pytest.mark.asyncio
     async def test_configure_from_dict(self, manager_with_backend, sample_config):
         """Test configuration from dictionary"""
-        manager, _ = manager_with_backend
+        manager = manager_with_backend
         
+        # Configure manager
         success = await manager.configure_from_dict(sample_config)
         assert success
         
-        # Check points were created
-        assert len(manager.points) == 2
-        assert "test_output" in manager.points
-        assert "test_input" in manager.points
+        # Verify points were configured
+        assert len(manager.points) == 4
+        assert "digital_in" in manager.points
+        assert "digital_out" in manager.points
+        assert "analog_in" in manager.points
+        assert "analog_out" in manager.points
         
-        # Check critical points
-        assert "test_input" in manager.critical_points
-        assert "test_output" not in manager.critical_points
-        
-        # Check that states were initialized
-        assert "test_output" in manager.current_states
-        assert "test_input" in manager.current_states
+        # Verify critical points
+        assert "digital_in" in manager.critical_points
     
+    @pytest.mark.asyncio
     async def test_start_stop(self, manager_with_backend, sample_config):
         """Test starting and stopping the manager"""
-        manager, _ = manager_with_backend
-        
+        manager = manager_with_backend
         await manager.configure_from_dict(sample_config)
         
-        # Start
+        # Start manager
         await manager.start()
         assert manager._running
         assert manager._polling_task is not None
         
-        # Stop
+        # Stop manager
         await manager.stop()
         assert not manager._running
-        assert manager._polling_task is None  # Should be cleared after stop
+        assert manager._polling_task is None
     
+    @pytest.mark.asyncio
     async def test_write_read(self, manager_with_backend, sample_config):
-        """Test writing and reading I/O points"""
-        manager, _ = manager_with_backend
-        
+        """Test writing and reading points"""
+        manager = manager_with_backend
         await manager.configure_from_dict(sample_config)
         await manager.start()
         
         try:
-            # Test write to output
-            success = await manager.write("test_output", True)
+            # Write to output
+            success = await manager.write("digital_out", True)
             assert success
             
-            # Test read
-            value = await manager.read("test_output")
+            # Read back
+            value = await manager.read("digital_out")
             assert value is True
             
-            # Test write to input (should fail)
-            success = await manager.write("test_input", True)
-            assert not success
+            # Write to analog output
+            success = await manager.write("analog_out", 3.14)
+            assert success
+            
+            # Read back
+            value = await manager.read("analog_out")
+            assert value == 3.14
             
         finally:
             await manager.stop()
     
+    @pytest.mark.asyncio
     async def test_read_all(self, manager_with_backend, sample_config):
-        """Test reading all I/O points"""
-        manager, _ = manager_with_backend
-        
+        """Test reading all points"""
+        manager = manager_with_backend
         await manager.configure_from_dict(sample_config)
         await manager.start()
         
         try:
             # Write some values
-            await manager.write("test_output", True)
+            await manager.write("digital_out", True)
+            await manager.write("analog_out", 3.14)
             
-            # Read all
-            all_states = await manager.read_all()
-            assert isinstance(all_states, dict)
-            assert "test_output" in all_states
-            assert "test_input" in all_states  # Should be present after initialization
-            assert all_states["test_output"] is True
-            assert all_states["test_input"] is False  # Default initial value
+            # Read all points
+            states = await manager.read_all()
+            
+            # Verify results
+            assert isinstance(states, dict)
+            assert "digital_out" in states
+            assert "analog_out" in states
+            assert states["digital_out"] is True
+            assert states["analog_out"] == 3.14
             
         finally:
             await manager.stop()
     
+    @pytest.mark.asyncio
     async def test_change_callbacks(self, manager_with_backend, sample_config):
-        """Test change notification callbacks"""
-        manager, backend = manager_with_backend
-        
+        """Test state change callbacks"""
+        manager = manager_with_backend
         await manager.configure_from_dict(sample_config)
         
-        # Setup callback
         changes_received = []
         
         def change_callback(changes):
@@ -143,71 +164,78 @@ class TestIoManager:
         await manager.start()
         
         try:
-            # Write to output (should trigger callback)
-            await manager.write("test_output", True)
+            # Write to output
+            await manager.write("digital_out", True)
             
-            # Simulate input change
-            backend.simulate_input_change("test_input", True)
+            # Wait for callback
+            await asyncio.sleep(0.1)
             
-            # Wait for polling to detect change
-            await asyncio.sleep(0.05)
-            
-            # Check callbacks were called
-            assert len(changes_received) >= 1
+            # Verify callback was called
+            assert len(changes_received) == 1
+            change = changes_received[0]
+            assert isinstance(change, StateChange)
+            assert change.point_name == "digital_out"
+            assert change.old_value is False
+            assert change.new_value is True
             
         finally:
             await manager.stop()
     
+    @pytest.mark.asyncio
     async def test_invalid_operations(self, manager_with_backend):
-        """Test error handling for invalid operations"""
-        manager, _ = manager_with_backend
+        """Test invalid operations"""
+        manager = manager_with_backend
         
-        # Try to read non-existent point
-        with pytest.raises(ValueError, match="Unknown I/O point"):
-            await manager.read("nonexistent")
+        # Try to read before configuration
+        with pytest.raises(RuntimeError):
+            await manager.read("test_point")
         
-        # Try to write to non-existent point
-        success = await manager.write("nonexistent", True)
-        assert not success
+        # Try to write before configuration
+        with pytest.raises(RuntimeError):
+            await manager.write("test_point", True)
     
+    @pytest.mark.asyncio
     async def test_performance_metrics(self, manager_with_backend, sample_config):
-        """Test performance metrics tracking"""
-        manager, _ = manager_with_backend
-        
+        """Test performance metrics"""
+        manager = manager_with_backend
         await manager.configure_from_dict(sample_config)
         await manager.start()
         
         try:
-            # Perform operations
-            await manager.write("test_output", True)
-            await manager.read("test_output")
+            # Perform some operations
+            await manager.write("digital_out", True)
+            await manager.read("digital_out")
             
-            # Check metrics
-            assert manager.metrics.read_count > 0
-            assert manager.metrics.write_count > 0
-            assert manager.metrics.avg_read_time_ms >= 0
-            assert manager.metrics.avg_write_time_ms >= 0
+            # Get metrics
+            metrics = await manager.metrics.get_metrics()
+            
+            # Verify metrics
+            assert "simulator" in metrics
+            backend_metrics = metrics["simulator"]
+            assert backend_metrics["read"]["count"] > 0
+            assert backend_metrics["write"]["count"] > 0
+            assert "avg_time" in backend_metrics["read"]
+            assert "avg_time" in backend_metrics["write"]
             
         finally:
             await manager.stop()
 
-
 class TestAsyncBehavior:
-    """Test async behavior and concurrency"""
+    """Test async behavior and performance"""
     
+    @pytest.mark.asyncio
     async def test_concurrent_operations(self):
-        """Test concurrent read/write operations"""
+        """Test concurrent operations"""
         manager = IoManager()
-        backend = SimulatedBackend("test")
+        backend = SimulatedBackend()
         await manager.add_backend("simulator", backend)
         
         config = {
             "io_points": [
                 {
-                    "name": f"output_{i}",
+                    "name": f"point_{i}",
                     "io_type": "digital_output",
-                    "hardware_ref": f"sim.pin{i}",
-                    "description": f"Test output {i}"
+                    "hardware_ref": f"sim_{i}"
                 }
                 for i in range(10)
             ]
@@ -218,100 +246,160 @@ class TestAsyncBehavior:
         
         try:
             # Perform concurrent writes
-            tasks = []
-            for i in range(10):
-                task = manager.write(f"output_{i}", i % 2 == 0)
-                tasks.append(task)
-            
-            results = await asyncio.gather(*tasks)
-            assert all(results)  # All writes should succeed
+            write_tasks = [
+                manager.write(f"point_{i}", i % 2 == 0)
+                for i in range(10)
+            ]
+            await asyncio.gather(*write_tasks)
             
             # Perform concurrent reads
-            tasks = []
-            for i in range(10):
-                task = manager.read(f"output_{i}")
-                tasks.append(task)
+            read_tasks = [
+                manager.read(f"point_{i}")
+                for i in range(10)
+            ]
+            results = await asyncio.gather(*read_tasks)
             
-            values = await asyncio.gather(*tasks)
-            assert len(values) == 10
+            # Verify results
+            for i, result in enumerate(results):
+                assert result == (i % 2 == 0)
             
         finally:
             await manager.stop()
     
+    @pytest.mark.asyncio
     async def test_polling_performance(self):
-        """Test that polling doesn't block operations"""
-        manager = IoManager()
-        backend = SimulatedBackend("test")
+        """Test polling performance"""
+        manager = IoManager(PollingConfig(
+            normal_interval=0.01,  # 10ms
+            critical_interval=0.001,  # 1ms
+            batch_size=16,
+            batch_timeout=0.001  # 1ms
+        ))
+        
+        backend = SimulatedBackend()
         await manager.add_backend("simulator", backend)
         
         config = {
             "io_points": [
                 {
-                    "name": "test_output",
-                    "io_type": "digital_output", 
-                    "hardware_ref": "sim.pin0",
-                    "description": "Test output"
+                    "name": "critical_in",
+                    "io_type": "digital_input",
+                    "hardware_ref": "sim_0",
+                    "critical": True
+                },
+                {
+                    "name": "normal_in",
+                    "io_type": "digital_input",
+                    "hardware_ref": "sim_1"
                 }
             ]
         }
         
         await manager.configure_from_dict(config)
+        
+        # Track changes
+        changes_received = []
+        
+        def change_callback(changes):
+            changes_received.extend(changes)
+        
+        manager.on_change(change_callback)
         await manager.start()
         
         try:
-            # Measure operation time while polling is running
-            start_time = asyncio.get_event_loop().time()
+            # Simulate some changes
+            backend.set_simulated_states({"sim_0": True})
+            await asyncio.sleep(0.002)  # Wait for critical poll
             
-            for _ in range(100):
-                await manager.write("test_output", True)
-                await manager.read("test_output")
+            backend.set_simulated_states({"sim_1": True})
+            await asyncio.sleep(0.02)  # Wait for normal poll
             
-            end_time = asyncio.get_event_loop().time()
-            total_time_ms = (end_time - start_time) * 1000
+            # Verify changes were detected
+            assert len(changes_received) == 2
             
-            # Should complete 200 operations in reasonable time
-            avg_time_per_op = total_time_ms / 200
-            assert avg_time_per_op < 10  # Less than 10ms per operation
+            # Verify critical point was updated first
+            assert changes_received[0].point_name == "critical_in"
+            assert changes_received[1].point_name == "normal_in"
             
         finally:
             await manager.stop()
 
-
 @pytest.mark.asyncio
 async def test_integration_example():
-    """Integration test similar to the basic example"""
-    manager = IoManager()
-    simulator = SimulatedBackend("test_sim")
-    await manager.add_backend("simulator", simulator)
+    """Integration test example"""
+    # Create manager with custom polling config
+    manager = IoManager(PollingConfig(
+        normal_interval=0.01,
+        critical_interval=0.001,
+        batch_size=16,
+        batch_timeout=0.001
+    ))
     
+    # Add simulated backend
+    backend = SimulatedBackend()
+    await manager.add_backend("simulator", backend)
+    
+    # Configure I/O points
     config = {
         "io_points": [
             {
-                "name": "relay_1",
+                "name": "emergency_stop",
+                "io_type": "digital_input",
+                "hardware_ref": "sim_0",
+                "critical": True,
+                "description": "Emergency stop button"
+            },
+            {
+                "name": "motor_enable",
                 "io_type": "digital_output",
-                "hardware_ref": "sim.pin0",
-                "critical": False,
-                "description": "Test relay"
+                "hardware_ref": "sim_1",
+                "description": "Motor enable signal"
+            },
+            {
+                "name": "speed_setpoint",
+                "io_type": "analog_output",
+                "hardware_ref": "sim_2",
+                "description": "Motor speed setpoint"
             }
         ]
     }
     
-    success = await manager.configure_from_dict(config)
-    assert success
+    # Configure manager
+    await manager.configure_from_dict(config)
     
+    # Track state changes
+    changes_received = []
+    
+    def change_callback(changes):
+        changes_received.extend(changes)
+    
+    manager.on_change(change_callback)
+    
+    # Start manager
     await manager.start()
     
     try:
-        # Test basic operations
-        success = await manager.write("relay_1", True)
-        assert success
+        # Simulate emergency stop
+        backend.set_simulated_states({"sim_0": True})
+        await asyncio.sleep(0.002)  # Wait for critical poll
         
-        state = await manager.read("relay_1")
-        assert state is True
+        # Verify emergency stop was detected
+        assert len(changes_received) == 1
+        assert changes_received[0].point_name == "emergency_stop"
+        assert changes_received[0].new_value is True
         
-        all_states = await manager.read_all()
-        assert "relay_1" in all_states
-        assert all_states["relay_1"] is True
+        # Enable motor
+        await manager.write("motor_enable", True)
+        await asyncio.sleep(0.01)
+        
+        # Set speed
+        await manager.write("speed_setpoint", 75.5)
+        await asyncio.sleep(0.01)
+        
+        # Read current state
+        states = await manager.read_all()
+        assert states["motor_enable"] is True
+        assert states["speed_setpoint"] == 75.5
         
     finally:
         await manager.stop()
