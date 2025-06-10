@@ -1,0 +1,86 @@
+# Safety-Critical System Configuration
+# Demonstrates safety interlocks and emergency systems
+
+io_points:
+  # === EMERGENCY SYSTEMS ===
+  - name: emergency_stop_main
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin8
+    critical: true
+    pull_up: true
+    description: "Main emergency stop (NC contact)"
+
+  - name: emergency_stop_remote
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin9
+    critical: true
+    pull_up: true
+    description: "Remote emergency stop (NC contact)"
+
+  # === SAFETY INTERLOCKS ===
+  - name: safety_door_1
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin10
+    critical: true
+    pull_up: true
+    description: "Safety door 1 interlock (NC contact)"
+
+  - name: safety_door_2
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin11
+    critical: true
+    pull_up: true
+    description: "Safety door 2 interlock (NC contact)"
+
+  - name: light_curtain
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin12
+    critical: true
+    description: "Safety light curtain (NO contact)"
+
+  - name: pressure_safety_switch
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin13
+    critical: true
+    description: "High pressure safety switch"
+
+  # === CRITICAL OUTPUTS (Fail-safe defaults) ===
+  - name: main_contactor
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin0
+    critical: true
+    initial_state: false
+    description: "Main power contactor (normally de-energized)"
+
+  - name: safety_relay
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin1
+    critical: true
+    initial_state: false
+    description: "Safety relay (normally de-energized)"
+
+  - name: emergency_vent
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin2
+    critical: true
+    initial_state: true
+    description: "Emergency vent valve (normally open for safety)"
+
+  # === ALARM OUTPUTS ===
+  - name: alarm_siren
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin3
+    initial_state: false
+    description: "Emergency alarm siren"
+
+  - name: strobe_light
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin4
+    initial_state: false
+    description: "Emergency strobe light"
+
+  - name: safety_beacon
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin5
+    initial_state: false
+    description: "Safety beacon light"

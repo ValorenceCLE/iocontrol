@@ -1,4 +1,4 @@
-"""Tests for IoControl core functionality"""
+"""Tests for IoControl core functionality - Fixed Version"""
 
 import pytest
 import asyncio
@@ -61,6 +61,10 @@ class TestIoManager:
         # Check critical points
         assert "test_input" in manager.critical_points
         assert "test_output" not in manager.critical_points
+        
+        # Check that states were initialized
+        assert "test_output" in manager.current_states
+        assert "test_input" in manager.current_states
     
     async def test_start_stop(self, manager_with_backend, sample_config):
         """Test starting and stopping the manager"""
@@ -76,7 +80,7 @@ class TestIoManager:
         # Stop
         await manager.stop()
         assert not manager._running
-        assert manager._polling_task is None
+        assert manager._polling_task is None  # Should be cleared after stop
     
     async def test_write_read(self, manager_with_backend, sample_config):
         """Test writing and reading I/O points"""
@@ -116,7 +120,9 @@ class TestIoManager:
             all_states = await manager.read_all()
             assert isinstance(all_states, dict)
             assert "test_output" in all_states
-            assert "test_input" in all_states
+            assert "test_input" in all_states  # Should be present after initialization
+            assert all_states["test_output"] is True
+            assert all_states["test_input"] is False  # Default initial value
             
         finally:
             await manager.stop()

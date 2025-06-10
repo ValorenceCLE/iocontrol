@@ -1,0 +1,22 @@
+io_points:
+- critical: true
+  description: Main water pump (updated description)
+  hardware_ref: sim.pin0
+  initial_state: false
+  io_type: digital_output
+  name: pump_main
+- critical: true
+  description: Emergency stop button (NC contact)
+  hardware_ref: sim.pin1
+  io_type: digital_input
+  name: emergency_stop
+  pull_up: true
+- description: Water level sensor (0-100%)
+  hardware_ref: sim.analog0
+  io_type: analog_input
+  name: level_sensor
+- description: System status LED
+  hardware_ref: sim.pin2
+  initial_state: false
+  io_type: digital_output
+  name: status_led

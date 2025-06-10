@@ -1,0 +1,24 @@
+{
+  "io_points": [
+    {
+      "name": "relay_1",
+      "io_type": "digital_output",
+      "hardware_ref": "sim.pin0", 
+      "initial_state": false,
+      "description": "Main relay control"
+    },
+    {
+      "name": "switch_1", 
+      "io_type": "digital_input",
+      "hardware_ref": "sim.pin1",
+      "critical": false,
+      "description": "Manual switch input"
+    },
+    {
+      "name": "temp_sensor",
+      "io_type": "analog_input", 
+      "hardware_ref": "sim.analog0",
+      "description": "Temperature sensor (0-100°C)"
+    }
+  ]
+}

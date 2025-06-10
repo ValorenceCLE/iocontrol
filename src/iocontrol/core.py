@@ -1,4 +1,4 @@
-"""Core IoManager Implementation"""
+"""Core IoManager Implementation - Fixed Version"""
 
 from __future__ import annotations
 import asyncio
@@ -71,12 +71,30 @@ class IoManager:
                 if backend_points:
                     await backend.initialize(backend_points)
             
+            # Initialize current_states with all points from backends
+            await self._initialize_states()
+            
             logger.info(f"Configured {len(self.points)} I/O points")
             return True
         
         except Exception as e:
             logger.error(f"Configuration failed: {e}")
             return False
+    
+    async def _initialize_states(self) -> None:
+        """Initialize current_states with all I/O points"""
+        # Read initial states from all backends
+        for backend in self.backends.values():
+            try:
+                backend_states = await backend.read_all()
+                self.current_states.update(backend_states)
+            except Exception as e:
+                logger.error(f"Failed to read initial states from backend {backend.name}: {e}")
+                # Initialize with default values for points from this backend
+                for point_name, point in self.points.items():
+                    if self._get_backend_for_point(point) == backend:
+                        if point_name not in self.current_states:
+                            self.current_states[point_name] = False  # Default to False
     
     async def configure_from_file(self, config_path: Union[str, Path]) -> bool:
         """Configure from JSON/YAML file"""
@@ -112,6 +130,8 @@ class IoManager:
                 await self._polling_task
             except asyncio.CancelledError:
                 pass
+            # Clear the task reference after cancellation
+            self._polling_task = None
 
         # Close backends
         for backend in self.backends.values():

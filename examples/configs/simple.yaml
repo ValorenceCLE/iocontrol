@@ -1,0 +1,23 @@
+# Simple IoControl Configuration Example
+# Basic I/O point definitions for learning
+
+io_points:
+  # Digital output - controls a relay
+  - name: relay_1
+    io_type: digital_output
+    hardware_ref: sim.pin0
+    initial_state: false
+    description: "Main relay control"
+
+  # Digital input - reads a switch
+  - name: switch_1
+    io_type: digital_input
+    hardware_ref: sim.pin1
+    critical: false
+    description: "Manual switch input"
+
+  # Analog input - reads a sensor
+  - name: temp_sensor
+    io_type: analog_input
+    hardware_ref: sim.analog0
+    description: "Temperature sensor (0-100°C)"

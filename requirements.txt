@@ -1,1 +1,8 @@
-PyYAML==6.0.2
+# IoControl Requirements
+# Core dependencies for the IoControl package
+
+# Configuration file support
+PyYAML>=6.0.2
+
+# Configuration validation
+jsonschema>=4.0.0

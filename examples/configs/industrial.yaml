@@ -1,0 +1,87 @@
+# Industrial Pump Station Configuration
+# Real-world example with safety systems and process control
+
+io_points:
+  # === SAFETY INPUTS (Critical monitoring) ===
+  - name: emergency_stop
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin8
+    critical: true
+    pull_up: true
+    description: "Emergency stop button (NC contact)"
+
+  - name: door_interlock
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin9
+    critical: true
+    pull_up: true
+    description: "Control panel door interlock"
+
+  # === PROCESS SENSORS ===
+  - name: tank_level_high
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin10
+    critical: true
+    description: "High level float switch"
+
+  - name: tank_level_low
+    io_type: digital_input
+    hardware_ref: mcp.chip0.pin11
+    critical: false
+    description: "Low level float switch"
+
+  - name: pressure_sensor
+    io_type: analog_input
+    hardware_ref: mcp.chip1.pin0
+    description: "System pressure (0-100 PSI)"
+
+  - name: flow_sensor
+    io_type: analog_input
+    hardware_ref: mcp.chip1.pin1
+    description: "Flow rate sensor (0-500 GPM)"
+
+  # === CONTROL OUTPUTS ===
+  - name: pump_main
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin0
+    critical: true
+    initial_state: false
+    description: "Main pump motor starter"
+
+  - name: pump_backup
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin1
+    critical: true
+    initial_state: false
+    description: "Backup pump motor starter"
+
+  - name: valve_inlet
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin2
+    initial_state: false
+    description: "Inlet valve solenoid"
+
+  - name: valve_outlet
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin3
+    initial_state: true
+    description: "Outlet valve solenoid (NO - starts open)"
+
+  # === ALARMS & STATUS ===
+  - name: alarm_horn
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin4
+    initial_state: false
+    description: "Alarm horn"
+
+  - name: led_run
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin5
+    initial_state: false
+    description: "Green LED - system running"
+
+  - name: led_alarm
+    io_type: digital_output
+    hardware_ref: mcp.chip0.pin6
+    initial_state: false
+    description: "Red LED - alarm condition"

@@ -92,15 +92,15 @@ async def main():
     print("\n Testing Rapid Operations...")
     start_time = asyncio.get_event_loop().time()
 
-    for i in range(1000):
+    for i in range(100):
         await manager.write("relay_1", i % 2 == 0)
         state = await manager.read("relay_1")
     
     end_time = asyncio.get_event_loop().time()
     total_time_ms = (end_time - start_time) * 1000
-    ops_per_second = 2000 / (total_time_ms / 1000)
+    ops_per_second = 200 / (total_time_ms / 1000)
 
-    print(f"2000 operations in {total_time_ms:.2f}ms ({ops_per_second:.1f} ops/sec)")
+    print(f"200 operations in {total_time_ms:.2f}ms ({ops_per_second:.1f} ops/sec)")
 
     # Keep running for a bit to see polling in action
     print("\n Running for 5 seconds to see polling...")
